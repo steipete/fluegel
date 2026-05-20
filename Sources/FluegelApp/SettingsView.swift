@@ -31,8 +31,13 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Request Access") {
-                    model.requestReminders()
+                if model.permissionManager.remindersStatus == .authorized {
+                    Label("Granted", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                } else {
+                    Button("Request Access") {
+                        model.requestReminders()
+                    }
                 }
             }
             Spacer()
