@@ -1,0 +1,6 @@
+.build/
+dist/
+.swiftpm/
+.swiftpm-cache/
+.clang-cache/
+DerivedData/
