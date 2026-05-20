@@ -146,7 +146,14 @@ struct CLI {
     }
 
     private func send(_ request: BridgeRequest) throws -> BridgeResponse {
-        let timeout = max(10, (request.run?.timeoutSeconds ?? 0) + 5)
+        let timeout: TimeInterval = switch request.action {
+        case .addWhitelist, .removeWhitelist, .requestPermission:
+            120
+        case .run:
+            max(10, (request.run?.timeoutSeconds ?? 0) + 5)
+        case .status, .listWhitelist, .permissionStatus, .auditList:
+            10
+        }
         return try BridgeClient(timeout: timeout).send(request)
     }
 
