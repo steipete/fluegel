@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out the event commit
+        # This public repository needs no checkout action or stored credentials.
+        run: |
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Run the full test suite
+        run: swift test
+
+      - name: Build the release app and CLI
+        run: scripts/build-app.sh
+
+      - name: Verify the app bundle and smoke-test the CLI
+        run: |
+          plutil -lint dist/Fluegel.app/Contents/Info.plist
+          codesign --verify --deep --strict dist/Fluegel.app
+          test -x dist/Fluegel.app/Contents/MacOS/Fluegel
+          dist/fluegel --help
+
+          exit_code=0
+          output=$(dist/fluegel run -- relative-path 2>&1) || exit_code=$?
+          printf '%s\n' "$output"
+          test "$exit_code" -eq 2
+          test "$output" = 'usage: fluegel run -- /full/path [args...]'
