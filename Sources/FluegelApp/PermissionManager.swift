@@ -27,15 +27,11 @@ final class PermissionManager: ObservableObject {
     func request(_ permission: PermissionKind) async -> PermissionStatus {
         switch permission {
         case .reminders:
-            let granted: Bool
-            do {
-                if #available(macOS 14.0, *) {
-                    granted = try await eventStore.requestFullAccessToReminders()
-                } else {
-                    granted = try await eventStore.requestAccess(to: .reminder)
+            // Keep the non-Sendable event store on the main actor; only return the result.
+            let granted = await withCheckedContinuation { continuation in
+                eventStore.requestFullAccessToReminders { granted, error in
+                    continuation.resume(returning: granted && error == nil)
                 }
-            } catch {
-                granted = false
             }
             remindersStatus = granted ? .authorized : Self.remindersStatus()
             return remindersStatus
