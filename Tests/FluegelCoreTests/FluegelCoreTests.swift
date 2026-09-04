@@ -122,6 +122,54 @@ struct FluegelCoreTests {
         }
     }
 
+    @Test("command runner kills surviving children after the timed out parent exits")
+    func commandRunnerKillsChildAfterParentExits() throws {
+        let directory = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let childPidFile = directory.appendingPathComponent("child-pid")
+
+        defer {
+            if let contents = try? String(contentsOf: childPidFile, encoding: .utf8),
+               let pid = Int32(contents.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                kill(pid, SIGKILL)
+            }
+        }
+        // Reset the test host's inherited SIGTERM mask only inside the fixture.
+        #expect(throws: CommandRunnerError.timedOut) {
+            _ = try CommandRunner().run(RunRequest(
+                executablePath: "/usr/bin/perl",
+                arguments: [
+                    "-e",
+                    """
+                    use POSIX qw(SIG_UNBLOCK SIGTERM);
+                    $SIG{TERM} = 'DEFAULT';
+                    POSIX::sigprocmask(SIG_UNBLOCK, POSIX::SigSet->new(SIGTERM)) or die "sigprocmask: $!";
+                    defined(my $child = fork()) or die "fork: $!";
+                    if ($child == 0) {
+                        $SIG{TERM} = 'IGNORE';
+                        open(my $file, '>', $ARGV[0]) or die "pid file: $!";
+                        print $file "$$\\n";
+                        close($file);
+                    }
+                    sleep 30;
+                    """,
+                    childPidFile.path,
+                ],
+                timeoutSeconds: 2
+            ))
+        }
+
+        let childPID = try #require(Int32(
+            String(contentsOf: childPidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        ))
+        // Orphan reaping can lag the signal delivery briefly.
+        let deadline = Date().addingTimeInterval(2)
+        while kill(childPID, 0) == 0 && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        #expect(kill(childPID, 0) == -1)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("FluegelTests-\(UUID().uuidString)", isDirectory: true)

@@ -91,8 +91,10 @@ public struct CommandRunner: Sendable {
 
         if finished.wait(timeout: .now() + request.timeoutSeconds) == .timedOut {
             kill(-spawnedPID, SIGTERM)
-            if finished.wait(timeout: .now() + 2) == .timedOut {
-                kill(-spawnedPID, SIGKILL)
+            let parentFinished = finished.wait(timeout: .now() + 2)
+            // The parent can exit on SIGTERM while children in its group ignore it.
+            kill(-spawnedPID, SIGKILL)
+            if parentFinished == .timedOut {
                 _ = finished.wait(timeout: .now() + 2)
             }
             stdout.readabilityHandler = nil
