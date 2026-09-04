@@ -33,6 +33,8 @@ fluegel run -- /full/path [args...]
 
 The executable path must be absolute and match an enabled whitelist entry exactly. Arguments after the executable are passed through unchanged. The child process inherits Fluegel's environment, uses the CLI's current directory, and has a 30-second default timeout.
 
+On timeout, Fluegel sends SIGTERM to the command's process group, waits up to two seconds for the parent to exit, then sends SIGKILL to any remaining group members. Children that ignore SIGTERM are also stopped when their parent exits first.
+
 The separator is optional, but it makes the boundary between Fluegel's arguments and the child command clear.
 
 ## Whitelist
