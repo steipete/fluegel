@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - 2026-09-13
+## 0.1.0 - 2026-09-14
 
 **Highlights:** Timed-out commands now stop surviving child processes, and Reminders permission requests build correctly with older EventKit SDK annotations.
 
