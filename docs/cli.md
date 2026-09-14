@@ -1,10 +1,11 @@
 # CLI reference
 
-The `fluegel` CLI talks to the Fluegel menu bar app over its local bridge. Start the app in the logged-in GUI session before using commands other than `--help`.
+The `fluegel` CLI talks to the Fluegel menu bar app over its local bridge. Start the app in the logged-in GUI session before using commands other than `--help` and `--version`.
 
 ## Commands
 
 ```text
+fluegel --version
 fluegel status
 fluegel run -- /full/path [args...]
 fluegel allow list
@@ -16,6 +17,8 @@ fluegel audit list [--limit n]
 ```
 
 `fluegel help`, `fluegel --help`, and `fluegel -h` print this command list.
+
+`fluegel --version` prints the release version without connecting to the app.
 
 ## Status
 

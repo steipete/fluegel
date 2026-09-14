@@ -8,15 +8,25 @@ CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 
 cd "$ROOT"
-swift build -c release
+build_args=(-c release)
+if [[ "${1:-}" == "--universal" ]]; then
+  build_args+=(--arch arm64 --arch x86_64)
+elif [[ $# -ne 0 ]]; then
+  echo "usage: $0 [--universal]" >&2
+  exit 2
+fi
+swift build "${build_args[@]}"
+bin_dir="$(swift build "${build_args[@]}" --show-bin-path)"
+version="$(sed -nE 's/.*static let current = "([0-9]+\.[0-9]+\.[0-9]+)".*/\1/p' Sources/FluegelCore/Version.swift)"
+[[ -n "$version" ]]
 
 rm -rf "$APP"
 mkdir -p "$MACOS"
-cp ".build/release/FluegelMenu" "$MACOS/Fluegel"
-cp ".build/release/fluegel" "$DIST/fluegel"
+cp "$bin_dir/FluegelMenu" "$MACOS/Fluegel"
+cp "$bin_dir/fluegel" "$DIST/fluegel"
 chmod +x "$MACOS/Fluegel" "$DIST/fluegel"
 
-cat > "$CONTENTS/Info.plist" <<'PLIST'
+cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -32,7 +42,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>$version</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
