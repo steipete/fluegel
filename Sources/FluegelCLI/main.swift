@@ -11,6 +11,9 @@ struct CLI {
         }
 
         switch command {
+        case "--version":
+            print(FluegelVersion.current)
+            return 0
         case "status":
             return try status()
         case "run":
@@ -176,6 +179,7 @@ struct CLI {
 
     private func printHelp() {
         print("""
+        fluegel --version
         fluegel status
         fluegel run -- /full/path [args...]
         fluegel allow list

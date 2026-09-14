@@ -1,0 +1,184 @@
+name: Release
+run-name: Release ${{ inputs.tag || github.ref_name }}
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-fluegel
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Resolve release tag
+        id: source
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag" refs/heads/main:refs/remotes/origin/main
+          [[ "$(git cat-file -t "$tag")" == tag ]]
+          sha="$(git rev-parse "$tag^{commit}")"
+          [[ "$sha" == "$(git rev-parse refs/remotes/origin/main)" ]]
+          git checkout --detach "$sha"
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&event=push&branch=main&per_page=1")"
+          jq -e --arg sha "$sha" '.workflow_runs[0] | .head_sha == $sha and .status == "completed" and .conclusion == "success"' <<< "$runs"
+          printf 'tag=%s\nsha=%s\n' "$tag" "$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Validate notes and build universal app and CLI
+        env:
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+        run: |
+          scripts/release-notes.sh "$RELEASE_TAG" > "$RUNNER_TEMP/release-notes.md"
+          scripts/check.sh
+          test "$(dist/fluegel --version)" = "${RELEASE_TAG#v}"
+
+      - name: Import personal Developer ID into an ephemeral keychain
+        id: signer
+        env:
+          P12_BASE64: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          set +x
+          : "${P12_BASE64:?Missing MACOS_SIGNING_P12}" "${P12_PASSWORD:?Missing MACOS_SIGNING_P12_PASSWORD}"
+          umask 077
+          keychain="$RUNNER_TEMP/fluegel-release.keychain-db"
+          password="$(openssl rand -hex 32)"
+          p12="$RUNNER_TEMP/fluegel-release.p12"
+          certificate="$RUNNER_TEMP/fluegel-certificate.pem"
+          private_key="$RUNNER_TEMP/fluegel-private-key.pem"
+          trap 'rm -f "$p12" "$certificate" "$private_key"' EXIT
+          printf '%s' "$P12_BASE64" | base64 --decode > "$p12"
+          extract_pkcs12() {
+            if openssl pkcs12 -help 2>&1 | grep -- '-legacy' >/dev/null; then
+              openssl pkcs12 -legacy "$@"
+            else
+              openssl pkcs12 "$@"
+            fi
+          }
+          extract_pkcs12 -in "$p12" -clcerts -nokeys -out "$certificate" -passin env:P12_PASSWORD
+          extract_pkcs12 -in "$p12" -nocerts -nodes -out "$private_key" -passin env:P12_PASSWORD
+          security list-keychains -d user | sed -E 's/^[[:space:]]*"//; s/"[[:space:]]*$//' > "$RUNNER_TEMP/fluegel-original-keychains.txt"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security list-keychains -d user -s "$keychain"
+          security import "$certificate" -k "$keychain"
+          security import "$private_key" -k "$keychain" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+          authority='Developer ID Application: Peter Steinberger (Y5PE65HELJ)'
+          identity="$(security find-identity -v -p codesigning "$keychain" | awk -v authority="$authority" 'index($0, "\"" authority "\"") { print $2; exit }')"
+          [[ "$identity" =~ ^[0-9A-Fa-f]{40}$ ]]
+          printf 'identity=%s\nkeychain=%s\n' "$identity" "$keychain" >> "$GITHUB_OUTPUT"
+
+      - name: Sign, notarize, staple, and checksum
+        env:
+          RELEASE_TAG: ${{ steps.source.outputs.tag }}
+          IDENTITY: ${{ steps.signer.outputs.identity }}
+          KEYCHAIN: ${{ steps.signer.outputs.keychain }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY_P8: ${{ secrets.ASC_PRIVATE_KEY_P8 }}
+        run: scripts/package-release.sh "$RELEASE_TAG"
+
+      - name: Remove signing credentials and restore keychains
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f "$RUNNER_TEMP/fluegel-original-keychains.txt" ]]; then
+            keychains=()
+            while IFS= read -r keychain; do keychains+=("$keychain"); done < "$RUNNER_TEMP/fluegel-original-keychains.txt"
+            security list-keychains -d user -s "${keychains[@]}"
+          fi
+          if [[ -f "$RUNNER_TEMP/fluegel-release.keychain-db" ]]; then
+            security delete-keychain "$RUNNER_TEMP/fluegel-release.keychain-db"
+          fi
+          rm -f "$RUNNER_TEMP/fluegel-notary.p8" "$RUNNER_TEMP/fluegel-release.p12" "$RUNNER_TEMP/fluegel-certificate.pem" "$RUNNER_TEMP/fluegel-private-key.pem"
+
+      - name: Upload release candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fluegel-release
+          path: dist/release/
+          if-no-files-found: error
+          retention-days: 7
+
+  verify:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact release verifier
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.package.outputs.sha }}
+          persist-credentials: false
+      - name: Download release candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fluegel-release
+          path: release-assets
+      - name: Verify signed payloads on the native host
+        env:
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+        run: |
+          env -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_RUNTIME_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+            scripts/verify-release.sh "$RELEASE_TAG" release-assets
+          scripts/release-notes.sh "$RELEASE_TAG" > expected-notes.md
+          cmp expected-notes.md release-assets/RELEASE-NOTES.md
+
+  publish:
+    needs: [package, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fluegel-release
+          path: release-assets
+      - name: Publish release and exact notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.package.outputs.tag }}
+          RELEASE_SHA: ${{ needs.package.outputs.sha }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum -c checksums.txt
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq .object.sha)"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .object.sha)" = "$RELEASE_SHA"
+          gh release create "$RELEASE_TAG" fluegel-macos.zip checksums.txt \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --target "$RELEASE_SHA" \
+            --title "$RELEASE_TAG" --notes-file RELEASE-NOTES.md

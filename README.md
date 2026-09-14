@@ -12,7 +12,20 @@ The first supported permission is Reminders, commonly used with [`rem`](https://
 
 ## Install
 
-Fluegel is currently built from source. It requires macOS 14 or later and a Swift 6 toolchain from Xcode or the Xcode Command Line Tools.
+Download the signed and notarized [0.1.0 macOS release](https://github.com/steipete/fluegel/releases/tag/v0.1.0). The universal archive contains `Fluegel.app` and the `fluegel` CLI for Apple Silicon and Intel Macs running macOS 14 or later.
+
+```bash
+curl -fLO https://github.com/steipete/fluegel/releases/download/v0.1.0/fluegel-macos.zip
+curl -fLO https://github.com/steipete/fluegel/releases/download/v0.1.0/checksums.txt
+shasum -a 256 -c checksums.txt
+ditto -x -k fluegel-macos.zip .
+mkdir -p ~/Applications ~/.local/bin
+ditto Fluegel.app ~/Applications/Fluegel.app
+install -m 0755 fluegel ~/.local/bin/fluegel
+~/.local/bin/fluegel --version
+```
+
+To build from source, install a Swift 6 toolchain from Xcode or the Xcode Command Line Tools:
 
 ```bash
 git clone https://github.com/steipete/fluegel.git
@@ -87,8 +100,7 @@ If the CLI cannot connect, the permission status is unexpected, or a command is 
 ## Development
 
 ```bash
-swift test
-scripts/build-app.sh
+scripts/check.sh
 ```
 
 The build produces `dist/Fluegel.app` and `dist/fluegel`. See the [development notes](docs/development.md) for local packaging and the repository's deployment helper.
