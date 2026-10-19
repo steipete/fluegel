@@ -10,6 +10,7 @@ version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/F
 for binary in dist/fluegel dist/Fluegel.app/Contents/MacOS/Fluegel; do
   for arch in arm64 x86_64; do
     lipo "$binary" -verify_arch "$arch"
+    otool -arch "$arch" -l "$binary" | awk '/LC_BUILD_VERSION/ { build=1 } build && /minos/ { if ($2 != "14.0") exit 1; found=1; exit } END { if (!found) exit 1 }'
   done
 done
 dist/fluegel --help

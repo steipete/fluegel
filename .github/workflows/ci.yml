@@ -14,7 +14,9 @@ concurrency:
 
 jobs:
   build-and-test:
-    runs-on: macos-15
+    runs-on: xcode-27
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     timeout-minutes: 15
     defaults:
       run:
@@ -35,3 +37,10 @@ jobs:
 
       - name: Run the full local gate
         run: scripts/check.sh
+
+      - name: Smoke-test both CLI architectures
+        run: |
+          arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /usr/bin/true
+          arch -arm64 dist/fluegel --version
+          arch -x86_64 dist/fluegel --version

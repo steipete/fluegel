@@ -12,7 +12,7 @@ For local testing against saved privacy grants, sign the app with the same persi
 
 ## Continuous integration
 
-The `CI` workflow runs on branch pushes and pull requests using GitHub's `macos-15` runner and its bundled Swift toolchain. It runs the full test suite, builds the release app and CLI, verifies the app bundle's metadata and signature, and checks CLI help and rejection of relative executable paths. Pull requests test the merge commit with the target branch.
+The `CI` workflow runs on branch pushes and pull requests using GitHub's Apple Silicon `xcode-27` runner and its bundled Swift toolchain. It runs the full test suite, builds the release app and CLI, verifies the macOS 14 minimum and app bundle metadata/signature, and checks CLI help and rejection of relative executable paths. Both CLI architectures are smoke-tested, with Intel running under Rosetta. Pull requests test the merge commit with the target branch.
 
 The package has no external SwiftPM dependencies. CI uses the runner's existing tools without third-party actions. The separate release workflow uses pinned GitHub artifact actions. It does not launch the GUI app or request privacy permissions; launch and bridge checks still require local verification with the appropriate signing identity.
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Move CI and signed release verification to Xcode 27 runners, preserving macOS 14 and verifying Intel CLI execution under Rosetta; add non-publishing release dry runs.
+
 ## 0.1.0 - 2026-09-14
 
 **Highlights:** Timed-out commands now stop surviving child processes, and Reminders permission requests build correctly with older EventKit SDK annotations.
