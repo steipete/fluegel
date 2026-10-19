@@ -4,6 +4,8 @@ Fluegel ships one universal macOS archive containing `Fluegel.app` and `fluegel`
 
 The release follows remindctl's tag-driven universal Swift packaging path, with Developer ID signing and notarization in GitHub Actions. The app keeps bundle identifier `me.steipete.Fluegel`; the CLI uses `me.steipete.fluegel`. Both are signed as `Developer ID Application: Peter Steinberger (Y5PE65HELJ)`. The workflow imports its signer into an ephemeral runner keychain and restores the original search list during cleanup.
 
+Dispatch `Release` on `main` with `dry_run: true` and the current release tag to build, sign, notarize, and verify the selected commit without creating a tag or publishing a release. Dry runs are the default; an intentional release dispatch must set `dry_run: false`.
+
 ## Preparation
 
 1. Set `FluegelVersion.current` in `Sources/FluegelCore/Version.swift`. The CLI and generated app metadata use this same value. Increment `CFBundleVersion` in `scripts/build-app.sh` for each release.
@@ -22,7 +24,7 @@ git tag -s vX.Y.Z -m 'Release vX.Y.Z'
 git push origin vX.Y.Z
 ```
 
-The `Release` workflow verifies that the annotated tag equals `main` and that independent CI passed at that exact commit. It rebuilds and tests both architectures, signs both payloads with the hardened runtime and a secure timestamp, notarizes their archive, staples the app ticket, and generates checksums. Independent Apple Silicon and Intel jobs verify the exact artifact, notarization, signing identity, version, and minimum deployment target before publication. Neither job launches the GUI app.
+For publication, the `Release` workflow verifies that the annotated tag equals `main` and that independent CI passed at that exact commit. It rebuilds and tests both architectures on `xcode-27`, signs both payloads with the hardened runtime and a secure timestamp, notarizes their archive, staples the app ticket, and generates checksums. Independent Apple Silicon and Intel jobs on `xcode-27` verify the exact artifact, notarization, signing identity, version, and minimum deployment target before publication; the Intel job executes the CLI under Rosetta. Neither job launches the GUI app.
 
 Publication creates a new release and refuses to overwrite an existing one. Before publication, a transient failed job can be rerun; a full retry can also use `workflow_dispatch` with the existing tag while `main` is unchanged. Never move a published tag.
 

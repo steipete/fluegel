@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 version="${1#v}"
+architecture="${3:-$(uname -m)}"
+[[ "$architecture" == arm64 || "$architecture" == x86_64 ]]
 asset_dir="$(cd "$2" && pwd)"
 (cd "$asset_dir" && shasum -a 256 -c checksums.txt)
 stage="$(mktemp -d "${TMPDIR:-/tmp}/fluegel-verify.XXXXXX")"
@@ -24,5 +26,5 @@ for binary in "$cli" "$app/Contents/MacOS/Fluegel"; do
 done
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" == "$version" ]]
 [[ "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")" == 14.0 ]]
-[[ "$("$cli" --version)" == "$version" ]]
-"$cli" --help
+[[ "$(arch -"$architecture" "$cli" --version)" == "$version" ]]
+arch -"$architecture" "$cli" --help

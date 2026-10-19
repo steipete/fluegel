@@ -6,6 +6,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: Build, sign and verify without publishing a release
+        type: boolean
+        default: true
       tag:
         description: Existing release tag (for example v0.1.0)
         required: true
@@ -20,7 +24,9 @@ concurrency:
 
 jobs:
   package:
-    runs-on: macos-15
+    runs-on: xcode-27
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
     timeout-minutes: 45
     permissions:
       actions: read
@@ -33,6 +39,7 @@ jobs:
         id: source
         env:
           INPUT_TAG: ${{ inputs.tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -40,6 +47,12 @@ jobs:
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           git init .
           git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          if [[ "$DRY_RUN" == true ]]; then
+            git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+            git checkout --detach FETCH_HEAD
+            printf 'tag=%s\nsha=%s\n' "$tag" "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag" refs/heads/main:refs/remotes/origin/main
           [[ "$(git cat-file -t "$tag")" == tag ]]
           sha="$(git rev-parse "$tag^{commit}")"
@@ -133,8 +146,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-15-intel]
-    runs-on: ${{ matrix.runner }}
+        arch: [arm64, x86_64]
+    runs-on: xcode-27
     timeout-minutes: 15
     steps:
       - name: Check out exact release verifier
@@ -147,16 +160,22 @@ jobs:
         with:
           name: fluegel-release
           path: release-assets
-      - name: Verify signed payloads on the native host
+      - name: Prepare Rosetta for Intel verification
+        if: matrix.arch == 'x86_64'
+        run: |
+          arch -x86_64 /usr/bin/true || sudo softwareupdate --install-rosetta --agree-to-license
+          arch -x86_64 /usr/bin/true
+      - name: Verify signed payloads for the selected architecture
         env:
           RELEASE_TAG: ${{ needs.package.outputs.tag }}
         run: |
           env -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_RUNTIME_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            scripts/verify-release.sh "$RELEASE_TAG" release-assets
+            scripts/verify-release.sh "$RELEASE_TAG" release-assets "${{ matrix.arch }}"
           scripts/release-notes.sh "$RELEASE_TAG" > expected-notes.md
           cmp expected-notes.md release-assets/RELEASE-NOTES.md
 
   publish:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
     needs: [package, verify]
     runs-on: ubuntu-latest
     timeout-minutes: 10
