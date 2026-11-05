@@ -21,9 +21,13 @@ let package = Package(
             name: "FluegelCLI",
             dependencies: ["FluegelCore"]
         ),
+        .executableTarget(
+            name: "SocketWriteProbe",
+            dependencies: ["FluegelCore"]
+        ),
         .testTarget(
             name: "FluegelCoreTests",
-            dependencies: ["FluegelCore"]
+            dependencies: ["FluegelCore", "SocketWriteProbe"]
         ),
     ]
 )

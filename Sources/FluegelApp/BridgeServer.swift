@@ -56,6 +56,12 @@ final class BridgeServer {
             if client < 0 {
                 return
             }
+            do {
+                try UnixSocket.disableSIGPIPE(client)
+            } catch {
+                close(client)
+                continue
+            }
             Self.ioQueue.async { [weak self] in
                 let data = Self.readRequest(from: client)
                 Task { @MainActor [weak self] in
@@ -106,19 +112,7 @@ final class BridgeServer {
 
     nonisolated private static func writeData(_ data: Data, to client: Int32) throws {
         defer { close(client) }
-        try data.withUnsafeBytes { pointer in
-            guard let baseAddress = pointer.bindMemory(to: UInt8.self).baseAddress else {
-                return
-            }
-            var sent = 0
-            while sent < data.count {
-                let count = write(client, baseAddress.advanced(by: sent), data.count - sent)
-                guard count > 0 else {
-                    throw POSIXError(.init(rawValue: errno) ?? .EIO)
-                }
-                sent += count
-            }
-        }
+        try UnixSocket.writeAll(data, to: client)
     }
 }
 
