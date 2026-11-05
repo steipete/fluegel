@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep the menu bar app and CLI alive when the bridge peer closes before a response is written.
 - Move CI and signed release verification to Xcode 27 runners, preserving macOS 14 and verifying Intel CLI execution under Rosetta; add non-publishing release dry runs.
 
 ## 0.1.0 - 2026-09-14

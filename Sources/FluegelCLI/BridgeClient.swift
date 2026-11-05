@@ -34,6 +34,7 @@ final class BridgeClient {
             throw POSIXError(.init(rawValue: errno) ?? .EIO)
         }
         defer { close(descriptor) }
+        try UnixSocket.disableSIGPIPE(descriptor)
         try configureTimeout(descriptor)
         try connect(descriptor, to: FluegelPaths.bridgeSocketFile().path)
 
@@ -91,21 +92,10 @@ final class BridgeClient {
     }
 
     private func writeAll(_ data: Data, to descriptor: Int32) throws {
-        try data.withUnsafeBytes { pointer in
-            guard let baseAddress = pointer.bindMemory(to: UInt8.self).baseAddress else {
-                return
-            }
-            var sent = 0
-            while sent < data.count {
-                let count = write(descriptor, baseAddress.advanced(by: sent), data.count - sent)
-                guard count > 0 else {
-                    if errno == EAGAIN || errno == EWOULDBLOCK {
-                        throw BridgeClientError.timeout
-                    }
-                    throw POSIXError(.init(rawValue: errno) ?? .EIO)
-                }
-                sent += count
-            }
+        do {
+            try UnixSocket.writeAll(data, to: descriptor)
+        } catch let error as POSIXError where error.code == .EAGAIN || error.code == .EWOULDBLOCK {
+            throw BridgeClientError.timeout
         }
     }
 
